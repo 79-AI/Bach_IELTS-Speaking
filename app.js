@@ -734,8 +734,15 @@
     if (!g || !g.length) return "";
     return `<div class="notes"><h4>Grammar highlights</h4><div class="tags">${g.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div></div>`;
   }
+  function recordCard() {
+    return `<div class="card" style="margin-top:14px; text-align:center;">
+      <button class="btn btn-rec" id="model-record-btn">🎙️ Practise this &amp; get scored</button>
+      <p class="section-intro" style="margin:8px 0 0; font-size:13px;">Record your own spoken answer to this question and get a band estimate against the four criteria — then an AI rewrite.</p>
+    </div>`;
+  }
   function renderModel(i) {
     const it = modelData()[i];
+    const recQuestion = modelPart === "2" ? it.title : modelPart === "1" ? it.questions[1] : it.sample.q;
     let html = "";
     if (modelPart === "2") {
       html = `<div class="cue"><h3>${esc(it.title)}</h3><p class="rubric">You should say:</p>
@@ -744,7 +751,8 @@
           <h4 class="notes" style="margin:0 0 8px;">Band 8 model answer (≈1.5–2 min spoken)</h4>
           <div class="model-text">${esc(it.model8)}</div>
           ${vocabTable(it.vocab)}${grammarTags(it.grammar)}
-        </div>`;
+        </div>
+        ${recordCard()}`;
     } else {
       // Part 1 or 3: show a question + band toggle
       const q = modelPart === "1" ? it.questions[1] : it.sample.q;
@@ -759,9 +767,11 @@
         </div>`;
       }
       html += `<div class="model-text" id="model-answer-text">${esc(hasAll ? models[currentBand] : models[8])}</div>
-        ${vocabTable(it.vocab)}${grammarTags(it.grammar)}</div>`;
+        ${vocabTable(it.vocab)}${grammarTags(it.grammar)}</div>${recordCard()}`;
     }
     $("#model-content").innerHTML = html;
+    const mRecBtn = $("#model-record-btn");
+    if (mRecBtn) mRecBtn.addEventListener("click", () => loadPromptAndRecord("Part " + modelPart, recQuestion));
     if (modelPart === "1") {
       $$("#band-toggle button").forEach((b) =>
         b.addEventListener("click", () => {
