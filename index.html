@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IELTS Speaking Coach</title>
+  <meta name="description" content="Practice IELTS Speaking — Part 1/2/3 questions, cue cards, timers, recording, automatic band-score estimate and Band 7/8/9 model answers." />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>🎙️ IELTS Speaking Coach</h1>
+    <p>Practice · Record · Get an instant band estimate · Learn from Band 7/8/9 models</p>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button data-view="practice" class="active">Practice</button>
+    <button data-view="cue">Cue Cards</button>
+    <button data-view="record">Record &amp; Score</button>
+    <button data-view="models">Model Answers</button>
+    <button data-view="bands">Band Guide</button>
+  </nav>
+
+  <main>
+    <!-- ============ PRACTICE (Part 1 & 3) ============ -->
+    <section class="view active" id="view-practice">
+      <p class="section-intro">Pick a part and topic to get authentic-style questions. Tap <b>Practise this</b> to record an answer and get a band estimate.</p>
+      <div class="chips" id="practice-part-chips">
+        <button class="chip active" data-part="1">Part 1 — Interview</button>
+        <button class="chip" data-part="3">Part 3 — Discussion</button>
+      </div>
+      <div class="chips" id="practice-topic-chips"></div>
+      <div id="practice-questions"></div>
+    </section>
+
+    <!-- ============ CUE CARDS (Part 2) ============ -->
+    <section class="view" id="view-cue">
+      <p class="section-intro">Part 2 long turn: you get <b>1 minute to prepare</b>, then speak for <b>1–2 minutes</b>. Use the timers below.</p>
+      <div class="chips" id="cue-chips"></div>
+      <div id="cue-content"></div>
+    </section>
+
+    <!-- ============ RECORD & SCORE ============ -->
+    <section class="view" id="view-record">
+      <p class="section-intro">Record your spoken answer. The app transcribes your speech and estimates a band score against the four IELTS criteria.</p>
+      <div class="notice" id="speech-support-note">
+        <b>Heads up:</b> automatic scoring needs the browser <b>Speech Recognition</b> feature, which works best in <b>Google Chrome</b> or <b>Microsoft Edge</b> on desktop. You can still record &amp; play back audio in any browser.
+      </div>
+
+      <div class="card">
+        <h3 id="rec-prompt-title">Free practice answer</h3>
+        <p id="rec-prompt-text" class="section-intro" style="margin-bottom:14px;">Speak about any question, or pick one from the Practice or Cue Card tabs first — your selected question shows here.</p>
+        <div class="btn-row">
+          <button class="btn btn-rec" id="rec-btn">● Start recording</button>
+          <button class="btn btn-ghost" id="rec-clear" disabled>Clear</button>
+          <span class="timer-label" id="rec-status" style="align-self:center;"></span>
+        </div>
+        <audio id="rec-audio" controls class="hidden"></audio>
+      </div>
+
+      <div class="card">
+        <h4 class="notes" style="margin:0 0 8px;">What you said (live transcript)</h4>
+        <div class="transcript" id="rec-transcript"><span class="placeholder">Your transcribed words will appear here as you speak…</span></div>
+      </div>
+
+      <div id="score-panel" class="hidden"></div>
+    </section>
+
+    <!-- ============ MODEL ANSWERS ============ -->
+    <section class="view" id="view-models">
+      <p class="section-intro">See how the same question sounds at Band 7, 8 and 9 — with target vocabulary (English + Vietnamese gloss) and grammar highlights.</p>
+      <div class="chips" id="model-part-chips">
+        <button class="chip active" data-part="1">Part 1</button>
+        <button class="chip" data-part="2">Part 2</button>
+        <button class="chip" data-part="3">Part 3</button>
+      </div>
+      <div class="chips" id="model-topic-chips"></div>
+      <div id="model-content"></div>
+    </section>
+
+    <!-- ============ BAND GUIDE ============ -->
+    <section class="view" id="view-bands">
+      <p class="section-intro">Your overall band is the average of four equally-weighted criteria (0–9, in half-bands).</p>
+      <div class="card" id="bands-criteria"></div>
+      <div class="card" id="bands-levels"></div>
+      <div class="card" id="bands-pron"></div>
+    </section>
+  </main>
+
+  <footer>
+    Built for IELTS Speaking practice · Questions are authentic-style, not official IELTS material ·
+    Band estimates are practice guidance only.
+  </footer>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
