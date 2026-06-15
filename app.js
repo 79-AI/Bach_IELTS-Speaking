@@ -504,6 +504,11 @@
   }
 
   /* ============================================ AI COACH (improve answer) */
+  // ── No-key mode: paste your Cloudflare Worker URL below (see SETUP-AI-PROXY.md).
+  //    When set, the app calls your worker (which holds the key) and NOBODY needs
+  //    to enter an API key. Leave "" to use paste-your-own-key mode instead.
+  const AI_PROXY_URL = "";
+
   const AI_KEY_STORE = "ielts_ai_key", AI_MODEL_STORE = "ielts_ai_model";
   function getKey() { try { return localStorage.getItem(AI_KEY_STORE) || ""; } catch (e) { return ""; } }
   function getModel() { try { return localStorage.getItem(AI_MODEL_STORE) || ""; } catch (e) { return ""; } }
@@ -514,6 +519,13 @@
     card.classList.remove("hidden");
     $("#ai-input").value = text || "";
     $("#ai-output").innerHTML = "";
+    // No-key (proxy) mode: hide all key UI — nobody needs a key.
+    if (AI_PROXY_URL) {
+      $("#ai-settings").classList.add("hidden");
+      $("#ai-settings-btn").classList.add("hidden");
+      $("#ai-key-status").textContent = "";
+      return;
+    }
     // reflect saved key state
     const k = getKey();
     $("#ai-key-status").textContent = k ? "✓ key saved" : "no key yet";
@@ -573,6 +585,18 @@
   }
 
   async function callAI(key, model, prompt) {
+    // No-key mode: send to your proxy, which holds the key server-side.
+    if (AI_PROXY_URL) {
+      const res = await fetch(AI_PROXY_URL, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      if (!res.ok) throw new Error(await readErr(res));
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      return (data.text || "").trim();
+    }
     const isAnthropic = /^sk-ant-/.test(key);
     if (isAnthropic) {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -643,7 +667,7 @@
       const key = getKey();
       const out = $("#ai-output");
       const transcript = $("#ai-input").value.trim();
-      if (!key) {
+      if (!AI_PROXY_URL && !key) {
         out.innerHTML = '<div class="notice">Add your API key first — tap <b>⚙ API key</b> above.</div>';
         $("#ai-settings").classList.remove("hidden");
         return;
