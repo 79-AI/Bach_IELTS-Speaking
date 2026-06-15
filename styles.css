@@ -144,6 +144,12 @@ ul.qlist li .qtext { font-weight: 500; }
 }
 .band-toggle button.active { background: var(--brand); color: #fff; border-color: var(--brand); }
 .model-text { background: var(--brand-soft); border-radius: 12px; padding: 16px 18px; font-size: 1rem; line-height: 1.7; }
+/* Key-vocabulary highlight inside model answers */
+.model-text mark.kv, mark.kv {
+  background: #ffe98a; color: inherit;
+  padding: 0 3px; border-radius: 4px;
+  font-weight: 600; box-decoration-break: clone; -webkit-box-decoration-break: clone;
+}
 .notes { margin-top: 14px; }
 .notes h4 { margin: 0 0 8px; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); }
 table.vocab { width: 100%; border-collapse: collapse; font-size: .9rem; }

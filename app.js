@@ -742,6 +742,71 @@
     renderModel(0);
   }
   let currentBand = 8;
+
+  /* Highlight every "Key vocabulary & collocations" phrase where it appears in
+     the model answer (yellow). Handles: slash-separated variants ("eat in / eat
+     out"), parenthetical placeholders ("pick up (a skill)"), word inflections
+     (isolate → isolating/isolated), and small word-gaps so citation-form idioms
+     still match their varied use in the answer ("strike a balance" →
+     "strikes the perfect balance"). Operates on already-escaped text → XSS-safe. */
+  const VOCAB_DROP = new Set(["a", "an", "the", "one", "ones", "your", "my", "his", "her",
+    "their", "its", "our", "you", "someone", "something", "somebody", "oneself", "yourself", "sth", "sb"]);
+  function escapeRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+  function inflectToken(tok) {
+    if (/[a-z]e$/i.test(tok)) return escapeRe(tok.slice(0, -1)) + "(?:e|es|ed|ing|ion|ions)?";
+    if (/[^aeiou]y$/i.test(tok)) return escapeRe(tok.slice(0, -1)) + "(?:y|ies|ied|ying)?";
+    return escapeRe(tok) + "(?:s|es|ed|ing|d)?";
+  }
+  function vocabPatterns(word) {
+    const out = [];
+    String(word).split("/").map((s) => s.trim()).filter(Boolean).forEach((variant) => {
+      const clean = variant.replace(/\([^)]*\)/g, " ").replace(/[^\w\s'-]/g, " ");
+      const toks = clean.split(/\s+/).filter(Boolean);
+      if (!toks.length) return;
+      const content = toks.filter((t) => !VOCAB_DROP.has(t.toLowerCase()));
+      try {
+        if (content.length >= 2) {
+          const gap = "(?:\\s+\\S+){0,2}\\s+";
+          out.push(new RegExp("\\b" + content.map(inflectToken).join(gap), "gi"));
+        } else {
+          const body = escapeRe(esc(variant)).replace(/\s+/g, "\\s+");
+          out.push(new RegExp("\\b" + body + "\\b", "gi"));
+        }
+      } catch (e) {}
+    });
+    return out;
+  }
+  function highlightVocab(rawText, vocab) {
+    const escaped = esc(rawText);
+    if (!vocab || !vocab.length) return escaped;
+    const ranges = [];
+    vocab.forEach((item) => {
+      const word = item && item.word;
+      if (!word) return;
+      vocabPatterns(word).forEach((re) => {
+        let m;
+        while ((m = re.exec(escaped)) !== null) {
+          if (m.index === re.lastIndex) re.lastIndex++;
+          if (m[0]) ranges.push([m.index, m.index + m[0].length]);
+        }
+      });
+    });
+    if (!ranges.length) return escaped;
+    ranges.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
+    const merged = [];
+    ranges.forEach((r) => {
+      const last = merged[merged.length - 1];
+      if (last && r[0] < last[1]) last[1] = Math.max(last[1], r[1]);
+      else merged.push(r.slice());
+    });
+    let out = "", pos = 0;
+    merged.forEach(([s, e]) => {
+      out += escaped.slice(pos, s) + '<mark class="kv">' + escaped.slice(s, e) + "</mark>";
+      pos = e;
+    });
+    return out + escaped.slice(pos);
+  }
+
   function vocabTable(vocab) {
     if (!vocab || !vocab.length) return "";
     return `<div class="notes"><h4>Key vocabulary &amp; collocations</h4><table class="vocab">${vocab
@@ -791,7 +856,7 @@
         <ul>${it.bullets.map((b) => `<li>${esc(b)}</li>`).join("")}</ul></div>
         <div class="card" style="margin-top:14px;">
           <h4 class="notes" style="margin:0 0 8px;">Band 8 model answer (≈1.5–2 min spoken)</h4>
-          <div class="model-text">${esc(it.model8)}</div>
+          <div class="model-text">${highlightVocab(it.model8, it.vocab)}</div>
           ${vocabTable(it.vocab)}${grammarTags(it.grammar)}
         </div>
         ${recordCard()}`;
@@ -808,7 +873,7 @@
           ${[7, 8, 9].map((b) => `<button data-b="${b}"${b === currentBand ? ' class="active"' : ""}>Band ${b}</button>`).join("")}
         </div>`;
       }
-      html += `<div class="model-text" id="model-answer-text">${esc(hasAll ? models[currentBand] : models[8])}</div>
+      html += `<div class="model-text" id="model-answer-text">${highlightVocab(hasAll ? models[currentBand] : models[8], it.vocab)}</div>
         ${vocabTable(it.vocab)}${grammarTags(it.grammar)}</div>${recordCard()}`;
     }
     $("#model-content").innerHTML = html;
@@ -831,7 +896,7 @@
           currentBand = +b.dataset.b;
           $$("#band-toggle button").forEach((x) => x.classList.remove("active"));
           b.classList.add("active");
-          $("#model-answer-text").textContent = it.models[currentBand];
+          $("#model-answer-text").innerHTML = highlightVocab(it.models[currentBand], it.vocab);
         })
       );
     }
