@@ -69,6 +69,35 @@
       </div>
 
       <div id="score-panel" class="hidden"></div>
+
+      <!-- ============ AI COACH: improved answer based on what you said ============ -->
+      <div class="card hidden" id="ai-card">
+        <h4 class="notes" style="margin:0 0 6px;">✨ AI coach — rewrite my answer to Band 8</h4>
+        <p class="section-intro" style="margin:0 0 12px;">Edit the transcript below if the speech-to-text got anything wrong, then get a personalised Band 8 version of <b>your own answer</b> — with what was upgraded and why.</p>
+        <textarea id="ai-input" rows="4" placeholder="What you said will appear here — you can edit it…"></textarea>
+        <div class="btn-row" style="margin-top:10px;">
+          <button class="btn btn-primary" id="ai-go">✨ Get my improved answer</button>
+          <button class="btn btn-ghost btn-sm" id="ai-settings-btn">⚙ API key</button>
+        </div>
+
+        <div id="ai-settings" class="hidden" style="margin-top:12px;">
+          <div class="notice" style="margin:0 0 10px;">
+            <b>One-time setup.</b> Paste your own API key (Anthropic key starts with <code>sk-ant-</code>, OpenAI with <code>sk-</code>).
+            It's saved <b>only in this browser</b> and sent <b>directly</b> to the AI provider — never to anyone else.
+          </div>
+          <label class="ai-label" for="ai-key">API key</label>
+          <input type="password" id="ai-key" class="ai-field" placeholder="sk-ant-... or sk-..." autocomplete="off" />
+          <label class="ai-label" for="ai-model" style="margin-top:8px;">Model (optional)</label>
+          <input type="text" id="ai-model" class="ai-field" placeholder="auto (claude-sonnet-4-6 / gpt-4o-mini)" autocomplete="off" />
+          <div class="btn-row" style="margin-top:10px;">
+            <button class="btn btn-primary btn-sm" id="ai-key-save">Save key</button>
+            <button class="btn btn-ghost btn-sm" id="ai-key-clear">Remove key</button>
+            <span class="timer-label" id="ai-key-status" style="align-self:center;"></span>
+          </div>
+        </div>
+
+        <div id="ai-output" style="margin-top:14px;"></div>
+      </div>
     </section>
 
     <!-- ============ MODEL ANSWERS ============ -->

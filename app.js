@@ -167,9 +167,11 @@
     return { mime: "", ext: "m4a" }; // let the browser choose its default (iOS → mp4)
   }
 
+  let lastPart = "Part 1", lastQuestion = "", lastTranscript = "", lastScore = null;
   function loadPromptAndRecord(partLabel, question) {
     $("#rec-prompt-title").textContent = partLabel + " question";
     $("#rec-prompt-text").textContent = "“" + question + "”";
+    lastPart = partLabel; lastQuestion = question;
     resetScore();
     goToTab("record");
   }
@@ -178,6 +180,8 @@
     $("#score-panel").innerHTML = "";
     finalTranscript = ""; interim = "";
     $("#rec-transcript").innerHTML = '<span class="placeholder">Your transcribed words will appear here as you speak…</span>';
+    const aiCard = $("#ai-card");
+    if (aiCard) { aiCard.classList.add("hidden"); $("#ai-output").innerHTML = ""; }
   }
 
   if (!SR) {
@@ -305,13 +309,17 @@
     setTimeout(() => {
       $("#rec-status").textContent = "";
       const text = (finalTranscript + " " + interim).trim();
+      lastTranscript = text;
+      lastScore = null;
       if (!SR) {
         showScoreUnavailable("Speech recognition isn't supported in this browser, so an automatic band score can't be generated. Your recording is ready to play back above.");
       } else if (text.split(/\s+/).filter(Boolean).length < 8) {
         showScoreUnavailable("Not enough speech was captured to score (try speaking for at least 20–30 seconds, clearly and close to the mic).");
       } else {
-        renderScore(scoreAnswer(text, elapsedMs / 1000));
+        lastScore = scoreAnswer(text, elapsedMs / 1000);
+        renderScore(lastScore);
       }
+      showAICard(text);
     }, 700);
   }
 
@@ -494,6 +502,173 @@
       <div class="notice">Pronunciation can't be judged from text. Play back your recording above and listen for clear final consonants, word stress and intonation.</div>`;
     p.scrollIntoView({ behavior: "smooth", block: "start" });
   }
+
+  /* ============================================ AI COACH (improve answer) */
+  const AI_KEY_STORE = "ielts_ai_key", AI_MODEL_STORE = "ielts_ai_model";
+  function getKey() { try { return localStorage.getItem(AI_KEY_STORE) || ""; } catch (e) { return ""; } }
+  function getModel() { try { return localStorage.getItem(AI_MODEL_STORE) || ""; } catch (e) { return ""; } }
+
+  function showAICard(text) {
+    const card = $("#ai-card");
+    if (!card) return;
+    card.classList.remove("hidden");
+    $("#ai-input").value = text || "";
+    $("#ai-output").innerHTML = "";
+    // reflect saved key state
+    const k = getKey();
+    $("#ai-key-status").textContent = k ? "✓ key saved" : "no key yet";
+    if (!k) $("#ai-settings").classList.remove("hidden");
+  }
+
+  // very small, safe markdown → HTML (headings, bold, bullets, paragraphs)
+  function miniMarkdown(md) {
+    const lines = String(md).replace(/\r/g, "").split("\n");
+    let html = "", inList = false;
+    const inline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\*(.+?)\*/g, "<em>$1</em>");
+    for (let raw of lines) {
+      const line = raw.trimEnd();
+      const h = line.match(/^(#{2,4})\s+(.*)$/);
+      const li = line.match(/^[-*]\s+(.*)$/) || line.match(/^\d+\.\s+(.*)$/);
+      if (h) { if (inList) { html += "</ul>"; inList = false; } html += `<h5 class="ai-h">${inline(h[2])}</h5>`; }
+      else if (li) { if (!inList) { html += '<ul class="ai-ul">'; inList = true; } html += `<li>${inline(li[1])}</li>`; }
+      else if (line === "") { if (inList) { html += "</ul>"; inList = false; } }
+      else { if (inList) { html += "</ul>"; inList = false; } html += `<p class="ai-p">${inline(line)}</p>`; }
+    }
+    if (inList) html += "</ul>";
+    return html;
+  }
+
+  function buildAIPrompt(part, question, transcript, score) {
+    const target = /Part 2/i.test(part) ? "about 160–200 words (a 1.5–2 minute long turn)"
+      : /Part 3/i.test(part) ? "about 70–110 words (3–6 developed sentences)"
+      : "about 40–70 words (2–4 natural sentences)";
+    let est = "";
+    if (score) {
+      const c = {}; score.criteria.forEach((x) => (c[x.key] = x.band));
+      est = `The app's rough automatic estimate was: overall ${score.overall}, Fluency&Coherence ${c.FC}, Lexical Resource ${c.LR}, Grammatical Range&Accuracy ${c.GRA}. Treat these as a loose guide only.`;
+    }
+    return [
+      "You are an expert IELTS Speaking examiner and tutor coaching a Vietnamese learner.",
+      `The learner answered this ${part} question: "${question || "(free practice)"}"`,
+      "Here is an auto-transcript of what they ACTUALLY said (speech-to-text, so ignore minor transcription errors and missing punctuation):",
+      `"""${transcript}"""`,
+      est,
+      "",
+      "Respond in GitHub-flavoured markdown using EXACTLY these four sections and headings:",
+      "",
+      "## Your improved Band 8 answer",
+      `Rewrite THEIR answer, keeping their ideas and personal details. Make it sound like natural SPOKEN Band 8 English (contractions, light fillers, flow) — not a written essay. Length: ${target}.`,
+      "",
+      "## What I upgraded",
+      "3–4 bullet points. In each, quote a phrase they said and show the better version, and name the criterion it helps (Fluency & Coherence, Lexical Resource, or Grammatical Range & Accuracy). Format: \"you said X\" → \"try Y\" (criterion).",
+      "",
+      "## 3 vocabulary upgrades",
+      "Three bullets, each: **word/collocation** — short English meaning (Vietnamese gloss in parentheses) — a short example.",
+      "",
+      "## One thing to practise next",
+      "One concrete, encouraging next step.",
+      "",
+      "Keep it warm, concise and practical. Do not invent facts the learner didn't imply.",
+    ].filter(Boolean).join("\n");
+  }
+
+  async function callAI(key, model, prompt) {
+    const isAnthropic = /^sk-ant-/.test(key);
+    if (isAnthropic) {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": key,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({
+          model: model || "claude-sonnet-4-6",
+          max_tokens: 1300,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+      if (!res.ok) throw new Error(await readErr(res));
+      const data = await res.json();
+      return (data.content || []).map((b) => b.text || "").join("").trim();
+    } else {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: "Bearer " + key },
+        body: JSON.stringify({
+          model: model || "gpt-4o-mini",
+          max_tokens: 1300,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+      if (!res.ok) throw new Error(await readErr(res));
+      const data = await res.json();
+      return ((data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || "").trim();
+    }
+  }
+  async function readErr(res) {
+    let detail = "";
+    try { const j = await res.json(); detail = (j.error && (j.error.message || j.error.type)) || JSON.stringify(j); } catch (e) {}
+    if (res.status === 401) return "Invalid or unauthorised API key (401). Check the key and try again.";
+    if (res.status === 429) return "Rate limit or quota reached (429). Wait a moment or check your account balance.";
+    return `Request failed (${res.status}). ${detail}`;
+  }
+
+  // ---- AI event wiring ----
+  (function bindAI() {
+    const card = $("#ai-card");
+    if (!card) return;
+    $("#ai-settings-btn").addEventListener("click", () => {
+      const s = $("#ai-settings");
+      s.classList.toggle("hidden");
+      if (!s.classList.contains("hidden")) { $("#ai-key").value = getKey(); $("#ai-model").value = getModel(); }
+    });
+    $("#ai-key-save").addEventListener("click", () => {
+      const k = $("#ai-key").value.trim();
+      const m = $("#ai-model").value.trim();
+      try {
+        if (k) localStorage.setItem(AI_KEY_STORE, k);
+        localStorage.setItem(AI_MODEL_STORE, m);
+      } catch (e) {}
+      $("#ai-key-status").textContent = k ? "✓ key saved" : "no key yet";
+      if (k) $("#ai-settings").classList.add("hidden");
+    });
+    $("#ai-key-clear").addEventListener("click", () => {
+      try { localStorage.removeItem(AI_KEY_STORE); } catch (e) {}
+      $("#ai-key").value = "";
+      $("#ai-key-status").textContent = "no key yet";
+    });
+    $("#ai-go").addEventListener("click", async () => {
+      const key = getKey();
+      const out = $("#ai-output");
+      const transcript = $("#ai-input").value.trim();
+      if (!key) {
+        out.innerHTML = '<div class="notice">Add your API key first — tap <b>⚙ API key</b> above.</div>';
+        $("#ai-settings").classList.remove("hidden");
+        return;
+      }
+      if (transcript.split(/\s+/).filter(Boolean).length < 5) {
+        out.innerHTML = '<div class="notice">Please record (or type) a longer answer first.</div>';
+        return;
+      }
+      const btn = $("#ai-go");
+      const label = btn.textContent;
+      btn.disabled = true; btn.textContent = "✨ Thinking…";
+      out.innerHTML = '<div class="notice">Asking the AI examiner to rewrite your answer… this usually takes a few seconds.</div>';
+      try {
+        const prompt = buildAIPrompt(lastPart, lastQuestion, transcript, lastScore);
+        const md = await callAI(key, getModel(), prompt);
+        out.innerHTML = md
+          ? `<div class="ai-result">${miniMarkdown(md)}</div>`
+          : '<div class="notice">The AI returned an empty response — please try again.</div>';
+      } catch (e) {
+        out.innerHTML = `<div class="notice" style="background:var(--red-soft);">⚠ ${esc(e.message || String(e))}</div>`;
+      } finally {
+        btn.disabled = false; btn.textContent = label;
+      }
+    });
+  })();
 
   /* ================================================ MODEL ANSWERS ======== */
   let modelPart = "1";
