@@ -147,6 +147,25 @@
   let mediaRecorder = null, audioChunks = [], recognition = null;
   let recording = false, finalTranscript = "", interim = "";
   let startTime = 0, elapsedMs = 0, statusTimer = null;
+  let recordedBlob = null, recordedExt = "webm";
+
+  // iOS Safari can ONLY record audio/mp4 — it does NOT support audio/webm.
+  // Pick the first mime type the device actually supports so playback/saving works everywhere.
+  function pickAudioMime() {
+    const candidates = [
+      { mime: "audio/webm;codecs=opus", ext: "webm" },
+      { mime: "audio/webm", ext: "webm" },
+      { mime: "audio/mp4", ext: "m4a" },
+      { mime: "audio/mp4;codecs=mp4a.40.2", ext: "m4a" },
+      { mime: "audio/aac", ext: "aac" },
+      { mime: "audio/ogg;codecs=opus", ext: "ogg" },
+    ];
+    const supports = window.MediaRecorder && typeof MediaRecorder.isTypeSupported === "function";
+    for (const c of candidates) {
+      if (supports && MediaRecorder.isTypeSupported(c.mime)) return c;
+    }
+    return { mime: "", ext: "m4a" }; // let the browser choose its default (iOS → mp4)
+  }
 
   function loadPromptAndRecord(partLabel, question) {
     $("#rec-prompt-title").textContent = partLabel + " question";
@@ -175,29 +194,70 @@
     $("#rec-audio").classList.add("hidden");
     $("#rec-audio").src = "";
     $("#rec-clear").disabled = true;
+    $("#rec-save").classList.add("hidden");
+    $("#rec-save").disabled = true;
+    $("#rec-save-hint").classList.add("hidden");
+    recordedBlob = null;
     elapsedMs = 0;
     resetScore();
     $("#rec-status").textContent = "";
   });
 
+  // Save / download the recorded audio to the device.
+  $("#rec-save").addEventListener("click", () => {
+    if (!recordedBlob) { alert("Record something first, then tap Save."); return; }
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+    const fname = `ielts-speaking-${stamp}.${recordedExt}`;
+    const url = URL.createObjectURL(recordedBlob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fname;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    $("#rec-save-hint").classList.remove("hidden");
+  });
+
   async function startRecording() {
     resetScore();
+    recordedBlob = null;
+    $("#rec-save").classList.add("hidden");
+    $("#rec-save").disabled = true;
+    $("#rec-save-hint").classList.add("hidden");
     // audio capture (best-effort)
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+      alert("Audio recording isn't supported in this browser. On iPhone, please use Safari and make sure iOS is up to date.");
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
+      const chosen = pickAudioMime();
+      recordedExt = chosen.ext;
+      try {
+        mediaRecorder = chosen.mime ? new MediaRecorder(stream, { mimeType: chosen.mime }) : new MediaRecorder(stream);
+      } catch (e) {
+        mediaRecorder = new MediaRecorder(stream); // fallback: browser default
+      }
       audioChunks = [];
-      mediaRecorder.ondataavailable = (e) => { if (e.data.size) audioChunks.push(e.data); };
+      mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size) audioChunks.push(e.data); };
       mediaRecorder.onstop = () => {
-        const blob = new Blob(audioChunks, { type: "audio/webm" });
-        const url = URL.createObjectURL(blob);
+        // Use the recorder's real mime type (iOS reports audio/mp4) so the file is playable & savable.
+        const realType = (mediaRecorder && mediaRecorder.mimeType) || chosen.mime || "audio/mp4";
+        if (/mp4|aac/.test(realType)) recordedExt = "m4a";
+        else if (/webm/.test(realType)) recordedExt = "webm";
+        else if (/ogg/.test(realType)) recordedExt = "ogg";
+        recordedBlob = new Blob(audioChunks, { type: realType.split(";")[0] });
+        const url = URL.createObjectURL(recordedBlob);
         const a = $("#rec-audio");
         a.src = url; a.classList.remove("hidden");
+        $("#rec-save").classList.remove("hidden");
+        $("#rec-save").disabled = false;
         stream.getTracks().forEach((t) => t.stop());
       };
       mediaRecorder.start();
     } catch (e) {
-      alert("Microphone access was blocked. Please allow the mic to record.");
+      alert("Microphone access was blocked. Please allow the mic to record (Settings → Safari → Microphone on iPhone).");
       return;
     }
     // speech recognition (for scoring)

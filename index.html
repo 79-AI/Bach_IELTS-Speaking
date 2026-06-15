@@ -53,10 +53,14 @@
         <p id="rec-prompt-text" class="section-intro" style="margin-bottom:14px;">Speak about any question, or pick one from the Practice or Cue Card tabs first — your selected question shows here.</p>
         <div class="btn-row">
           <button class="btn btn-rec" id="rec-btn">● Start recording</button>
+          <button class="btn btn-primary hidden" id="rec-save" disabled>⬇ Save recording</button>
           <button class="btn btn-ghost" id="rec-clear" disabled>Clear</button>
           <span class="timer-label" id="rec-status" style="align-self:center;"></span>
         </div>
-        <audio id="rec-audio" controls class="hidden"></audio>
+        <audio id="rec-audio" controls playsinline class="hidden"></audio>
+        <p class="section-intro hidden" id="rec-save-hint" style="margin:8px 0 0; font-size:13px;">
+          On iPhone: tap <b>Save recording</b>, then choose <b>Save to Files</b> (or share it). You can also long-press the player above to save the audio.
+        </p>
       </div>
 
       <div class="card">
