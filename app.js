@@ -168,20 +168,41 @@
   }
 
   let lastPart = "Part 1", lastQuestion = "", lastTranscript = "", lastScore = null;
+
+  // ---- One engine, swappable target panel. The Record & Score tab AND the inline
+  //      practice panel inside Model Answers share this. Only one records at a time,
+  //      so a single "UI" pointer to the active panel is enough.
+  const recordCtx = {
+    btn: $("#rec-btn"), clear: $("#rec-clear"), save: $("#rec-save"), saveHint: $("#rec-save-hint"),
+    audio: $("#rec-audio"), status: $("#rec-status"), transcript: $("#rec-transcript"), score: $("#score-panel"),
+    aiCard: $("#ai-card"), aiInput: $("#ai-input"), aiOutput: $("#ai-output"),
+    aiSettings: $("#ai-settings"), aiSettingsBtn: $("#ai-settings-btn"), aiKeyStatus: $("#ai-key-status"), aiGo: $("#ai-go"),
+  };
+  // Build a context from any inline panel using [data-role="..."] markers.
+  function ctxFromRoot(r) {
+    const q = (role) => r.querySelector('[data-role="' + role + '"]');
+    return {
+      btn: q("btn"), clear: q("clear"), save: q("save"), saveHint: q("save-hint"),
+      audio: q("audio"), status: q("status"), transcript: q("transcript"), score: q("score-panel"),
+      aiCard: q("ai-card"), aiInput: q("ai-input"), aiOutput: q("ai-output"),
+      aiSettings: null, aiSettingsBtn: null, aiKeyStatus: null, aiGo: q("ai-go"),
+    };
+  }
+  let UI = recordCtx;
+
   function loadPromptAndRecord(partLabel, question) {
     $("#rec-prompt-title").textContent = partLabel + " question";
     $("#rec-prompt-text").textContent = "“" + question + "”";
     lastPart = partLabel; lastQuestion = question;
+    UI = recordCtx;
     resetScore();
     goToTab("record");
   }
   function resetScore() {
-    $("#score-panel").classList.add("hidden");
-    $("#score-panel").innerHTML = "";
+    if (UI.score) { UI.score.classList.add("hidden"); UI.score.innerHTML = ""; }
     finalTranscript = ""; interim = "";
-    $("#rec-transcript").innerHTML = '<span class="placeholder">Your transcribed words will appear here as you speak…</span>';
-    const aiCard = $("#ai-card");
-    if (aiCard) { aiCard.classList.add("hidden"); $("#ai-output").innerHTML = ""; }
+    if (UI.transcript) UI.transcript.innerHTML = '<span class="placeholder">Your transcribed words will appear here as you speak…</span>';
+    if (UI.aiCard) { UI.aiCard.classList.add("hidden"); if (UI.aiOutput) UI.aiOutput.innerHTML = ""; }
   }
 
   if (!SR) {
@@ -190,45 +211,37 @@
       "You can still record and play back your audio. For scoring, open this app in <b>Google Chrome</b> or <b>Microsoft Edge</b> on desktop.";
   }
 
-  $("#rec-btn").addEventListener("click", async () => {
-    if (recording) { stopRecording(); return; }
-    await startRecording();
-  });
-  $("#rec-clear").addEventListener("click", () => {
-    $("#rec-audio").classList.add("hidden");
-    $("#rec-audio").src = "";
-    $("#rec-clear").disabled = true;
-    $("#rec-save").classList.add("hidden");
-    $("#rec-save").disabled = true;
-    $("#rec-save-hint").classList.add("hidden");
-    recordedBlob = null;
-    elapsedMs = 0;
+  function toggleRecord() { if (recording) stopRecording(); else startRecording(); }
+  function clearRecording() {
+    if (UI.audio) { UI.audio.classList.add("hidden"); UI.audio.src = ""; }
+    if (UI.clear) UI.clear.disabled = true;
+    if (UI.save) { UI.save.classList.add("hidden"); UI.save.disabled = true; }
+    if (UI.saveHint) UI.saveHint.classList.add("hidden");
+    recordedBlob = null; elapsedMs = 0;
     resetScore();
-    $("#rec-status").textContent = "";
-  });
-
-  // Save / download the recorded audio to the device.
-  $("#rec-save").addEventListener("click", () => {
+    if (UI.status) UI.status.textContent = "";
+  }
+  function saveRecording() {
     if (!recordedBlob) { alert("Record something first, then tap Save."); return; }
     const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
-    const fname = `ielts-speaking-${stamp}.${recordedExt}`;
     const url = URL.createObjectURL(recordedBlob);
     const a = document.createElement("a");
-    a.href = url;
-    a.download = fname;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    a.href = url; a.download = `ielts-speaking-${stamp}.${recordedExt}`;
+    document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
-    $("#rec-save-hint").classList.remove("hidden");
-  });
+    if (UI.saveHint) UI.saveHint.classList.remove("hidden");
+  }
+  // Record & Score tab bindings
+  recordCtx.btn.addEventListener("click", () => { UI = recordCtx; toggleRecord(); });
+  recordCtx.clear.addEventListener("click", () => { UI = recordCtx; clearRecording(); });
+  recordCtx.save.addEventListener("click", () => { UI = recordCtx; saveRecording(); });
 
   async function startRecording() {
+    const ui = UI; // capture the active panel for async callbacks
     resetScore();
     recordedBlob = null;
-    $("#rec-save").classList.add("hidden");
-    $("#rec-save").disabled = true;
-    $("#rec-save-hint").classList.add("hidden");
+    if (ui.save) { ui.save.classList.add("hidden"); ui.save.disabled = true; }
+    if (ui.saveHint) ui.saveHint.classList.add("hidden");
     // audio capture (best-effort)
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
       alert("Audio recording isn't supported in this browser. On iPhone, please use Safari and make sure iOS is up to date.");
@@ -253,10 +266,8 @@
         else if (/ogg/.test(realType)) recordedExt = "ogg";
         recordedBlob = new Blob(audioChunks, { type: realType.split(";")[0] });
         const url = URL.createObjectURL(recordedBlob);
-        const a = $("#rec-audio");
-        a.src = url; a.classList.remove("hidden");
-        $("#rec-save").classList.remove("hidden");
-        $("#rec-save").disabled = false;
+        if (ui.audio) { ui.audio.src = url; ui.audio.classList.remove("hidden"); }
+        if (ui.save) { ui.save.classList.remove("hidden"); ui.save.disabled = false; }
         stream.getTracks().forEach((t) => t.stop());
       };
       mediaRecorder.start();
@@ -286,28 +297,27 @@
     }
     recording = true;
     startTime = Date.now();
-    $("#rec-btn").textContent = "■ Stop & score";
-    $("#rec-btn").classList.add("recording");
-    $("#rec-clear").disabled = true;
+    if (ui.btn) { ui.btn.textContent = "■ Stop & score"; ui.btn.classList.add("recording"); }
+    if (ui.clear) ui.clear.disabled = true;
     statusTimer = setInterval(() => {
       const s = Math.floor((Date.now() - startTime) / 1000);
-      $("#rec-status").textContent = `Recording… ${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
+      if (ui.status) ui.status.textContent = `Recording… ${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
     }, 250);
   }
 
   function stopRecording() {
+    const ui = UI;
     recording = false;
     elapsedMs = Date.now() - startTime;
     clearInterval(statusTimer);
     if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
     if (recognition) { try { recognition.stop(); } catch (e) {} }
-    $("#rec-btn").textContent = "● Start recording";
-    $("#rec-btn").classList.remove("recording");
-    $("#rec-clear").disabled = false;
-    $("#rec-status").textContent = "Processing…";
+    if (ui.btn) { ui.btn.textContent = "● Start recording"; ui.btn.classList.remove("recording"); }
+    if (ui.clear) ui.clear.disabled = false;
+    if (ui.status) ui.status.textContent = "Processing…";
     // give recognition a moment to flush final results
     setTimeout(() => {
-      $("#rec-status").textContent = "";
+      if (ui.status) ui.status.textContent = "";
       const text = (finalTranscript + " " + interim).trim();
       lastTranscript = text;
       lastScore = null;
@@ -324,7 +334,8 @@
   }
 
   function renderTranscript() {
-    const el = $("#rec-transcript");
+    const el = UI.transcript;
+    if (!el) return;
     const f = esc(finalTranscript);
     const i = esc(interim);
     if (!f && !i) { el.innerHTML = '<span class="placeholder">Listening…</span>'; return; }
@@ -332,7 +343,8 @@
   }
 
   function showScoreUnavailable(msg) {
-    const p = $("#score-panel");
+    const p = UI.score;
+    if (!p) return;
     p.classList.remove("hidden");
     p.innerHTML = `<div class="notice">${esc(msg)}</div>`;
   }
@@ -465,7 +477,8 @@
   }
 
   function renderScore(r) {
-    const p = $("#score-panel");
+    const p = UI.score;
+    if (!p) return;
     p.classList.remove("hidden");
     const critHtml = r.criteria.map((c) => `
       <div class="crit">
@@ -514,22 +527,24 @@
   function getModel() { try { return localStorage.getItem(AI_MODEL_STORE) || ""; } catch (e) { return ""; } }
 
   function showAICard(text) {
-    const card = $("#ai-card");
-    if (!card) return;
-    card.classList.remove("hidden");
-    $("#ai-input").value = text || "";
-    $("#ai-output").innerHTML = "";
+    const ui = UI;
+    if (!ui.aiCard) return;
+    ui.aiCard.classList.remove("hidden");
+    if (ui.aiInput) ui.aiInput.value = text || "";
+    if (ui.aiOutput) ui.aiOutput.innerHTML = "";
+    // Key-management UI only exists on the Record tab; inline panels skip it.
+    if (!ui.aiSettings) return;
     // No-key (proxy) mode: hide all key UI — nobody needs a key.
     if (AI_PROXY_URL) {
-      $("#ai-settings").classList.add("hidden");
-      $("#ai-settings-btn").classList.add("hidden");
-      $("#ai-key-status").textContent = "";
+      ui.aiSettings.classList.add("hidden");
+      if (ui.aiSettingsBtn) ui.aiSettingsBtn.classList.add("hidden");
+      if (ui.aiKeyStatus) ui.aiKeyStatus.textContent = "";
       return;
     }
     // reflect saved key state
     const k = getKey();
-    $("#ai-key-status").textContent = k ? "✓ key saved" : "no key yet";
-    if (!k) $("#ai-settings").classList.remove("hidden");
+    if (ui.aiKeyStatus) ui.aiKeyStatus.textContent = k ? "✓ key saved" : "no key yet";
+    if (!k) ui.aiSettings.classList.remove("hidden");
   }
 
   // very small, safe markdown → HTML (headings, bold, bullets, paragraphs)
@@ -639,7 +654,38 @@
     return `Request failed (${res.status}). ${detail}`;
   }
 
-  // ---- AI event wiring ----
+  // Reusable: run an AI rewrite for any panel (Record tab or inline practice).
+  async function runAI(ctx) {
+    const key = getKey();
+    const out = ctx.aiOutput, input = ctx.aiInput, btn = ctx.aiGo;
+    if (!out || !input || !btn) return;
+    const transcript = input.value.trim();
+    if (!AI_PROXY_URL && !key) {
+      out.innerHTML = '<div class="notice">Add your API key first on the <b>Record &amp; Score</b> tab (⚙ API key).</div>';
+      if (ctx.aiSettings) ctx.aiSettings.classList.remove("hidden");
+      return;
+    }
+    if (transcript.split(/\s+/).filter(Boolean).length < 5) {
+      out.innerHTML = '<div class="notice">Please record (or type) a longer answer first.</div>';
+      return;
+    }
+    const label = btn.textContent;
+    btn.disabled = true; btn.textContent = "✨ Thinking…";
+    out.innerHTML = '<div class="notice">Asking the AI examiner to rewrite your answer… this usually takes a few seconds.</div>';
+    try {
+      const prompt = buildAIPrompt(lastPart, lastQuestion, transcript, lastScore);
+      const md = await callAI(key, getModel(), prompt);
+      out.innerHTML = md
+        ? `<div class="ai-result">${miniMarkdown(md)}</div>`
+        : '<div class="notice">The AI returned an empty response — please try again.</div>';
+    } catch (e) {
+      out.innerHTML = `<div class="notice" style="background:var(--red-soft);">⚠ ${esc(e.message || String(e))}</div>`;
+    } finally {
+      btn.disabled = false; btn.textContent = label;
+    }
+  }
+
+  // ---- AI event wiring (Record & Score tab) ----
   (function bindAI() {
     const card = $("#ai-card");
     if (!card) return;
@@ -663,35 +709,7 @@
       $("#ai-key").value = "";
       $("#ai-key-status").textContent = "no key yet";
     });
-    $("#ai-go").addEventListener("click", async () => {
-      const key = getKey();
-      const out = $("#ai-output");
-      const transcript = $("#ai-input").value.trim();
-      if (!AI_PROXY_URL && !key) {
-        out.innerHTML = '<div class="notice">Add your API key first — tap <b>⚙ API key</b> above.</div>';
-        $("#ai-settings").classList.remove("hidden");
-        return;
-      }
-      if (transcript.split(/\s+/).filter(Boolean).length < 5) {
-        out.innerHTML = '<div class="notice">Please record (or type) a longer answer first.</div>';
-        return;
-      }
-      const btn = $("#ai-go");
-      const label = btn.textContent;
-      btn.disabled = true; btn.textContent = "✨ Thinking…";
-      out.innerHTML = '<div class="notice">Asking the AI examiner to rewrite your answer… this usually takes a few seconds.</div>';
-      try {
-        const prompt = buildAIPrompt(lastPart, lastQuestion, transcript, lastScore);
-        const md = await callAI(key, getModel(), prompt);
-        out.innerHTML = md
-          ? `<div class="ai-result">${miniMarkdown(md)}</div>`
-          : '<div class="notice">The AI returned an empty response — please try again.</div>';
-      } catch (e) {
-        out.innerHTML = `<div class="notice" style="background:var(--red-soft);">⚠ ${esc(e.message || String(e))}</div>`;
-      } finally {
-        btn.disabled = false; btn.textContent = label;
-      }
-    });
+    $("#ai-go").addEventListener("click", () => runAI(recordCtx));
   })();
 
   /* ================================================ MODEL ANSWERS ======== */
@@ -735,9 +753,33 @@
     return `<div class="notes"><h4>Grammar highlights</h4><div class="tags">${g.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div></div>`;
   }
   function recordCard() {
-    return `<div class="card" style="margin-top:14px; text-align:center;">
-      <button class="btn btn-rec" id="model-record-btn">🎙️ Practise this &amp; get scored</button>
-      <p class="section-intro" style="margin:8px 0 0; font-size:13px;">Record your own spoken answer to this question and get a band estimate against the four criteria — then an AI rewrite.</p>
+    // A FULL, self-contained practice panel. The model answer stays visible above
+    // it, so students can read along (shadowing) while they record and get scored.
+    return `<div class="card practice-inline" style="margin-top:14px;">
+      <h4 class="notes" style="margin:0 0 6px;">🎙️ Now say it yourself — the model stays above as your guide</h4>
+      <p class="section-intro" style="margin:0 0 12px;">Read the model answer above, then record your own version here. The app scores you on the four IELTS criteria, right on this screen.</p>
+      <div class="btn-row">
+        <button class="btn btn-rec" data-role="btn">● Start recording</button>
+        <button class="btn btn-primary hidden" data-role="save" disabled>⬇ Save</button>
+        <button class="btn btn-ghost" data-role="clear" disabled>Clear</button>
+        <span class="timer-label" data-role="status" style="align-self:center;"></span>
+      </div>
+      <audio data-role="audio" controls playsinline class="hidden"></audio>
+      <p class="section-intro hidden" data-role="save-hint" style="margin:8px 0 0; font-size:13px;">On iPhone: tap <b>Save</b>, then choose <b>Save to Files</b>.</p>
+      <div class="card" style="margin-top:12px;">
+        <h4 class="notes" style="margin:0 0 8px;">What you said (live transcript)</h4>
+        <div class="transcript" data-role="transcript"><span class="placeholder">Your transcribed words will appear here as you speak…</span></div>
+      </div>
+      <div data-role="score-panel" class="hidden"></div>
+      <div class="card hidden" data-role="ai-card">
+        <h4 class="notes" style="margin:0 0 6px;">✨ AI coach — rewrite my answer to Band 8</h4>
+        <p class="section-intro" style="margin:0 0 10px;">Edit the transcript if needed, then get a Band 8 version of <b>your own</b> answer.</p>
+        <textarea data-role="ai-input" class="ai-field" rows="4" placeholder="What you said will appear here — you can edit it…"></textarea>
+        <div class="btn-row" style="margin-top:10px;">
+          <button class="btn btn-primary" data-role="ai-go">✨ Get my improved answer</button>
+        </div>
+        <div data-role="ai-output" style="margin-top:14px;"></div>
+      </div>
     </div>`;
   }
   function renderModel(i) {
@@ -770,8 +812,19 @@
         ${vocabTable(it.vocab)}${grammarTags(it.grammar)}</div>${recordCard()}`;
     }
     $("#model-content").innerHTML = html;
-    const mRecBtn = $("#model-record-btn");
-    if (mRecBtn) mRecBtn.addEventListener("click", () => loadPromptAndRecord("Part " + modelPart, recQuestion));
+    // Wire the inline practice panel to the shared recorder engine.
+    const practiceRoot = $("#model-content .practice-inline");
+    if (practiceRoot) {
+      const ctx = ctxFromRoot(practiceRoot);
+      if (ctx.btn) ctx.btn.addEventListener("click", () => {
+        UI = ctx;
+        lastPart = "Part " + modelPart; lastQuestion = recQuestion;
+        toggleRecord();
+      });
+      if (ctx.clear) ctx.clear.addEventListener("click", () => { UI = ctx; clearRecording(); });
+      if (ctx.save) ctx.save.addEventListener("click", () => { UI = ctx; saveRecording(); });
+      if (ctx.aiGo) ctx.aiGo.addEventListener("click", () => { UI = ctx; runAI(ctx); });
+    }
     if (modelPart === "1") {
       $$("#band-toggle button").forEach((b) =>
         b.addEventListener("click", () => {
